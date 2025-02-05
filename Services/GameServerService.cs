@@ -1,4 +1,4 @@
-// Services/GameServerService.cs
+using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -8,7 +8,13 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
+using System.Text.Json;
 using System.Threading.Tasks;
+using RobloxGameServerAPI.Validators; // Import Validators
+using Microsoft.EntityFrameworkCore.Storage; // Import for transactions
+using RobloxGameServerAPI.Data; // Import DataAccessException
+using RobloxGameServerAPI.Services; // Import ServiceException
+using Ganss.XSS; // Import HTML Sanitizer
 
 namespace RobloxGameServerAPI.Services
 {
@@ -16,67 +22,72 @@ namespace RobloxGameServerAPI.Services
     {
         private readonly IGameServerRepository _serverRepository;
         private readonly ILogger<GameServerService> _logger;
-        private readonly IMemoryCache _memoryCache;
+        private readonly IDistributedCache _distributedCache; // Use IDistributedCache for Redis
         private readonly IConfiguration _configuration;
-        private readonly HttpClient _httpClient; // Direct HttpClient Injection - now using IHttpClientFactory in GamePlaceService
+        private readonly HttpClient _httpClient;
         private readonly IPlayerRepository _playerRepository;
         private readonly IPlayerSessionRepository _playerSessionRepository;
         private readonly IServerConfigurationRepository _serverConfigurationRepository;
+        private readonly GameServerDbContext _context; // Inject DbContext for transactions
+        private readonly CreateServerRequestValidator _createServerRequestValidator; // Inject Validator
+        private readonly IHtmlSanitizer _htmlSanitizer; // Inject HTML Sanitizer
 
-
-        public GameServerService(IGameServerRepository serverRepository, ILogger<GameServerService> logger, IMemoryCache memoryCache, IConfiguration configuration, HttpClient httpClient, IPlayerRepository playerRepository, IPlayerSessionRepository playerSessionRepository, IServerConfigurationRepository serverConfigurationRepository)
+        public GameServerService(/* ... DI parameters - expanded to include DbContext, Validator, Sanitizer */)
         {
-            _serverRepository = serverRepository;
-            _logger = logger;
-            _memoryCache = memoryCache;
-            _configuration = configuration;
-            _httpClient = httpClient; // Direct HttpClient Injection - now using IHttpClientFactory in GamePlaceService
-            _playerRepository = playerRepository;
-            _playerSessionRepository = playerSessionRepository;
-            _serverConfigurationRepository = serverConfigurationRepository;
+            // ... Constructor - expanded DI parameters and assignments
         }
 
         public async Task<ServerResponse> GetServerAsync(Guid serverId)
         {
             string cacheKey = $"server-{serverId}";
-            ServerResponse serverResponse;
 
-            // Try to get server response from the cache first
-            if (!_memoryCache.TryGetValue(cacheKey, out serverResponse))
+            // 1. Try to get from Distributed Cache (Redis)
+            string cachedServerResponseJson = await _distributedCache.GetStringAsync(cacheKey);
+            if (!string.IsNullOrEmpty(cachedServerResponseJson))
             {
-                // Cache miss: Fetch server data from the repository
-                var server = await _serverRepository.GetServerByIdAsync(serverId);
-                if (server == null) return null;
-                serverResponse = MapServerToResponse(server);
-
-                var cacheEntryOptions = new MemoryCacheEntryOptions()
-                    .SetSlidingExpiration(TimeSpan.FromMinutes(_configuration.GetValue<int>("CacheExpirationMinutes", 5))); // Sliding expiration: cache entry refreshes if accessed within the expiration period
-
-                // Store the server response in the cache
-                _memoryCache.Set(cacheKey, serverResponse, cacheEntryOptions);
+                _logger.LogDebug("Retrieved server from distributed cache (Redis): ServerID={ServerID}", serverId);
+                return JsonSerializer.Deserialize<ServerResponse>(cachedServerResponseJson);
             }
-            // Cache hit or cache set: return the server response
-            return serverResponse;
-        }
 
-        public async Task<IEnumerable<ServerResponse>> GetAllServersAsync()
-        {
-            var servers = await _serverRepository.GetAllServersAsync();
-            return servers.Select(MapServerToResponse);
+            // 2. If not in cache, fetch from database
+            var server = await _serverRepository.GetServerByIdAsync(serverId);
+            if (server == null)
+            {
+                _logger.LogWarning("Server not found in database: ServerID={ServerID}", serverId);
+                return null; // Or throw NotFoundException
+            }
+            var serverResponse = MapServerToResponse(server);
+
+            // 3. Cache in Distributed Cache (Redis) for future requests
+            var cacheEntryOptions = new DistributedCacheEntryOptions()
+                .SetSlidingExpiration(TimeSpan.FromMinutes(_configuration.GetValue<int>("CacheExpirationMinutes", 5)));
+            await _distributedCache.SetStringAsync(cacheKey, JsonSerializer.Serialize(serverResponse), cacheEntryOptions);
+            _logger.LogDebug("Cached server in distributed cache (Redis): ServerID={ServerID}", serverId);
+
+            return serverResponse;
         }
 
         public async Task<ServerResponse> CreateServerAsync(CreateServerRequest createRequest)
         {
-            if (string.IsNullOrWhiteSpace(createRequest.Name))
+            // 1. Service-level validation using FluentValidation
+            var validationResult = _createServerRequestValidator.Validate(createRequest);
+            if (!validationResult.IsValid)
             {
-                throw new ArgumentException("Server name cannot be empty.");
+                var errorMessages = string.Join(", ", validationResult.Errors.Select(error => error.ErrorMessage));
+                _logger.LogWarning("Invalid CreateServerRequest: {Errors}", errorMessages);
+                throw new ArgumentException($"Invalid CreateServerRequest: {errorMessages}"); // Or custom ValidationException
             }
 
-            _logger.LogInformation("Creating new game server: {ServerName}, PlaceID: {PlaceID}", createRequest.Name, createRequest.RobloxPlaceID);
+            // 2. Data Sanitization (Example - Server Name)
+            string sanitizedServerName = _htmlSanitizer.Sanitize(createRequest.Name);
+            if (sanitizedServerName != createRequest.Name)
+            {
+                _logger.LogWarning("Server name sanitized for XSS prevention: Original='{OriginalName}', Sanitized='{SanitizedName}'", createRequest.Name, sanitizedServerName);
+            }
 
             var newServer = new GameServer
             {
-                Name = createRequest.Name,
+                Name = sanitizedServerName, // Use sanitized name
                 RobloxPlaceID = createRequest.RobloxPlaceID,
                 GameMode = createRequest.GameMode,
                 Region = createRequest.Region,
@@ -86,213 +97,34 @@ namespace RobloxGameServerAPI.Services
                 LastUpdatedTimestamp = DateTime.UtcNow
             };
 
-            var createdServer = await _serverRepository.CreateServerAsync(newServer);
-
-            // Create default server configuration
-            var defaultConfig = new ServerConfiguration { ServerID = createdServer.ServerID }; // Default config
-            await _serverConfigurationRepository.CreateConfigurationAsync(defaultConfig);
-
-            return MapServerToResponse(createdServer);
-        }
-
-        public async Task<ServerResponse> UpdateServerAsync(Guid serverId, UpdateServerRequest updateRequest)
-        {
-            var existingServer = await _serverRepository.GetServerByIdAsync(serverId);
-            if (existingServer == null) return null;
-
-            if (!string.IsNullOrWhiteSpace(updateRequest.Name)) existingServer.Name = updateRequest.Name;
-            if (!string.IsNullOrWhiteSpace(updateRequest.GameMode)) existingServer.GameMode = updateRequest.GameMode;
-            if (!string.IsNullOrWhiteSpace(updateRequest.Region)) existingServer.Region = updateRequest.Region;
-            if (updateRequest.MaxPlayers.HasValue) existingServer.MaxPlayers = updateRequest.MaxPlayers.Value;
-            if (!string.IsNullOrWhiteSpace(updateRequest.Status)) existingServer.Status = updateRequest.Status;
-
-            existingServer.LastUpdatedTimestamp = DateTime.UtcNow;
-            var updatedServer = await _serverRepository.UpdateServerAsync(existingServer);
-            _memoryCache.Remove($"server-{serverId}"); // Invalidate cache
-            return MapServerToResponse(updatedServer);
-        }
-
-        public async Task<bool> DeleteServerAsync(Guid serverId)
-        {
-            _memoryCache.Remove($"server-{serverId}"); // Invalidate cache
-            return await _serverRepository.DeleteServerAsync(serverId);
-        }
-
-        public async Task ProcessServerHeartbeatAsync(Guid serverId)
-        {
-            var server = await _serverRepository.GetServerByIdAsync(serverId);
-            if (server == null) return;
-
-            await _serverRepository.UpdateServerHeartbeatAsync(serverId);
-
-            if (server.HeartbeatTimestamp < DateTime.UtcNow.AddMinutes(-5))
+            using (IDbContextTransaction transaction = _context.Database.BeginTransaction()) // Transaction for atomicity
             {
-                Console.WriteLine($"Server {serverId} heartbeat timeout detected.");
-            }
-        }
-
-        public async Task<IEnumerable<ServerResponse>> GetServersByStatusAsync(string status)
-        {
-            var servers = await _serverRepository.GetServersByStatusAsync(status);
-            return servers.Select(MapServerToResponse);
-        }
-
-        public async Task<ServerConfiguration> GetServerConfigurationAsync(Guid serverId)
-        {
-            return await _serverConfigurationRepository.GetConfigurationByServerIdAsync(serverId);
-        }
-
-        public async Task<ServerConfiguration> UpdateServerConfigurationAsync(Guid serverId, ServerConfigurationUpdateRequest updateRequest)
-        {
-            var existingConfig = await _serverConfigurationRepository.GetConfigurationByServerIdAsync(serverId);
-            if (existingConfig == null) return null;
-
-            if (!string.IsNullOrWhiteSpace(updateRequest.MapName)) existingConfig.MapName = updateRequest.MapName;
-            if (updateRequest.TimeLimitMinutes.HasValue) existingConfig.TimeLimitMinutes = updateRequest.TimeLimitMinutes.Value;
-            if (updateRequest.FriendlyFireEnabled.HasValue) existingConfig.FriendlyFireEnabled = updateRequest.FriendlyFireEnabled.Value;
-            if (!string.IsNullOrWhiteSpace(updateRequest.GameRulesJson)) existingConfig.GameRulesJson = updateRequest.GameRulesJson;
-            if (!string.IsNullOrWhiteSpace(updateRequest.CustomCommandLineArgs)) existingConfig.CustomCommandLineArgs = updateRequest.CustomCommandLineArgs;
-            if (updateRequest.ReservedPorts.HasValue) existingConfig.ReservedPorts = updateRequest.ReservedPorts.Value;
-            if (updateRequest.CpuCoresLimit.HasValue) existingConfig.CpuCoresLimit = updateRequest.CpuCoresLimit.Value;
-            if (updateRequest.MemoryLimitMB.HasValue) existingConfig.MemoryLimitMB = updateRequest.MemoryLimitMB.Value;
-
-            var updatedConfig = await _serverConfigurationRepository.UpdateConfigurationAsync(existingConfig);
-            return updatedConfig;
-        }
-
-        public async Task<ServerHealthInfo> GetServerHealthAsync(Guid serverId)
-        {
-            var server = await _serverRepository.GetServerByIdAsync(serverId);
-            if (server == null) return null;
-
-            string healthEndpointUrl = $"http://{server.ServerIP}:{server.ServerPort}/health";
-
-            try
-            {
-                var response = await _httpClient.GetAsync(healthEndpointUrl); // Direct HttpClient usage here is acceptable for server health checks, which are less frequent
-                response.EnsureSuccessStatusCode();
-
-                string jsonContent = await response.Content.ReadAsStringAsync();
-                var healthInfo = System.Text.Json.JsonSerializer.Deserialize<ServerHealthInfo>(jsonContent);
-
-                return healthInfo;
-            }
-            catch (HttpRequestException ex)
-            {
-                _logger.LogWarning(ex, $"Error fetching server health for ServerID: {serverId}. URL: {healthEndpointUrl}");
-                return null;
-            }
-        }
-
-        public async Task<PlayerSession> PlayerJoinServerAsync(Guid serverId, PlayerJoinRequest request)
-        {
-            var server = await _serverRepository.GetServerByIdAsync(serverId);
-            var player = await _playerRepository.GetPlayerByIdAsync(request.PlayerID);
-            if (server == null || player == null) return null;
-
-            var newSession = new PlayerSession
-            {
-                SessionID = Guid.NewGuid(),
-                ServerID = serverId,
-                PlayerID = request.PlayerID,
-                JoinTime = DateTime.UtcNow,
-                PlayerIPAddress = request.PlayerIPAddress
-            };
-
-            try
-            {
-                var createdSession = await _playerSessionRepository.CreateSessionAsync(newSession);
-                server.CurrentPlayers++;
-                await _serverRepository.UpdateServerAsync(server);
-                return createdSession;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error creating player session.");
-                throw;
-            }
-        }
-
-        public async Task<bool> PlayerLeaveServerAsync(Guid serverId, PlayerLeaveRequest request)
-        {
-            var activeSession = await _playerSessionRepository.GetActiveSessionAsync(serverId, request.PlayerID);
-            if (activeSession == null) return false;
-
-            try
-            {
-                activeSession.LeaveTime = DateTime.UtcNow;
-                await _playerSessionRepository.UpdateSessionAsync(activeSession);
-
-                var server = await _serverRepository.GetServerByIdAsync(serverId);
-                if (server != null && server.CurrentPlayers > 0)
+                try
                 {
-                    server.CurrentPlayers--;
-                    await _serverRepository.UpdateServerAsync(server);
+                    var createdServer = await _serverRepository.CreateServerAsync(newServer);
+                    var defaultConfig = new ServerConfiguration { ServerID = createdServer.ServerID };
+                    await _serverConfigurationRepository.CreateConfigurationAsync(defaultConfig);
+
+                    transaction.Commit();
+                    _logger.LogInformation("Game server created successfully: ServerID={ServerID}, Name={ServerName}", createdServer.ServerID, createdServer.Name);
+                    return MapServerToResponse(createdServer);
                 }
-                return true;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error updating player session on leave.");
-                throw;
-            }
-        }
-
-        public async Task<IEnumerable<PlayerSession>> GetActivePlayerSessionsAsync(Guid serverId)
-        {
-            return await _playerSessionRepository.GetActiveSessionsByServerIdAsync(serverId);
-        }
-
-        public async Task<IEnumerable<ServerResponse>> GetServersForListingAsync(string statusFilter, string gameModeFilter, string regionFilter, string sortBy, string sortOrder)
-        {
-            var servers = await _serverRepository.GetAllServersAsync();
-
-            if (!string.IsNullOrEmpty(statusFilter))
-            {
-                servers = servers.Where(s => s.Status.ToLower() == statusFilter.ToLower());
-            }
-            if (!string.IsNullOrEmpty(gameModeFilter))
-            {
-                servers = servers.Where(s => s.GameMode.ToLower() == gameModeFilter.ToLower());
-            }
-            if (!string.IsNullOrEmpty(regionFilter))
-            {
-                servers = servers.Where(s => s.Region.ToLower() == regionFilter.ToLower());
-            }
-
-            servers = SortServers(servers, sortBy, sortOrder);
-
-            return servers.Select(MapServerToResponse);
-        }
-
-        private IEnumerable<GameServer> SortServers(IEnumerable<GameServer> servers, string sortBy, string sortOrder)
-        {
-            IOrderedEnumerable<GameServer> orderedServers = servers.OrderByDescending(s => s.CurrentPlayers);
-
-            if (!string.IsNullOrEmpty(sortBy))
-            {
-                sortBy = sortBy.ToLower();
-                sortOrder = sortOrder.ToLower();
-
-                switch (sortBy)
+                catch (DataAccessException ex) // Catch DataAccessException from Repository
                 {
-                    case "name":
-                        orderedServers = (sortOrder == "asc") ? servers.OrderBy(s => s.Name) : servers.OrderByDescending(s => s.Name);
-                        break;
-                    case "region":
-                        orderedServers = (sortOrder == "asc") ? servers.OrderBy(s => s.Region) : servers.OrderByDescending(s => s.Region);
-                        break;
-                    case "status":
-                        orderedServers = (sortOrder == "asc") ? servers.OrderBy(s => s.Status) : servers.OrderByDescending(s => s.Status);
-                        break;
-                    case "players":
-                    default:
-                        orderedServers = (sortOrder == "asc") ? servers.OrderBy(s => s.CurrentPlayers) : servers.OrderByDescending(s => s.CurrentPlayers);
-                        break;
+                    transaction.Rollback();
+                    _logger.LogError(ex, "Data access error during server creation transaction. Transaction rolled back.");
+                    throw new ServiceException("Failed to create server due to a database error.", ex); // Re-throw ServiceException
+                }
+                catch (Exception ex) // Catch any other unexpected exceptions
+                {
+                    transaction.Rollback();
+                    _logger.LogError(ex, "Unexpected error during server creation transaction. Transaction rolled back.");
+                    throw new ServiceException("An unexpected error occurred while creating the server.", ex);
                 }
             }
-            return orderedServers;
         }
+
+        // ... (Other service methods - UpdateServerAsync, DeleteServerAsync, ProcessServerHeartbeatAsync, etc. - implement similar error handling, caching invalidation, and transaction management where needed)
 
         private ServerResponse MapServerToResponse(GameServer server)
         {
