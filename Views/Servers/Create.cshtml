@@ -1,0 +1,73 @@
+@model RobloxGameServerAPI.Models.CreateServerRequest
+
+@{
+    ViewData["Title"] = "Create Server";
+}
+
+<div class="container">
+    <h1 class="display-4 text-primary mb-4">Create New Game Server</h1>
+
+    <div class="row justify-content-center">
+        <div class="col-md-8 col-lg-6">
+            <div class="card shadow p-4">
+                <h5 class="card-title text-muted mb-3">Enter Server Details</h5>
+                <form asp-action="Create" method="post">
+                    <div asp-validation-summary="ModelOnly" class="text-danger alert alert-danger shadow-sm p-3 mb-3" role="alert">
+                        <i class="bi bi-exclamation-circle-fill"></i> Please correct the following errors:
+                    </div>
+
+                    <div class="mb-3">
+                        <label asp-for="Name" class="form-label"><i class="bi bi-tag-fill text-primary me-1"></i> Server Name <span class="text-muted">(Required)</span></label>
+                        <input asp-for="Name" class="form-control shadow-sm" placeholder="Enter a descriptive server name" />
+                        <span asp-validation-for="Name" class="text-danger small fst-italic"></span>
+                    </div>
+
+                    <div class="mb-3">
+                        <label asp-for="RobloxPlaceID" class="form-label"><i class="bi bi-puzzle-fill text-primary me-1"></i> Roblox Place ID <span class="text-muted">(Required)</span></label>
+                        <input asp-for="RobloxPlaceID" class="form-control shadow-sm" placeholder="Enter Roblox Place ID" type="number" />
+                        <span asp-validation-for="RobloxPlaceID" class="text-danger small fst-italic"></span>
+                    </div>
+
+                    <div class="mb-3">
+                        <label asp-for="MaxPlayers" class="form-label"><i class="bi bi-people-fill text-primary me-1"></i> Maximum Players <span class="text-muted">(Required)</span></label>
+                        <input asp-for="MaxPlayers" class="form-control shadow-sm" placeholder="Enter maximum player capacity" type="number" />
+                        <span asp-validation-for="MaxPlayers" class="text-danger small fst-italic"></span>
+                    </div>
+
+                    <div class="mb-3">
+                        <label asp-for="GameMode" class="form-label"><i class="bi bi-controller text-info me-1"></i> Game Mode <span class="text-muted">(Optional)</span></label>
+                        <select asp-for="GameMode" class="form-select shadow-sm">
+                            <option value="">-- Select Game Mode (Default) --</option>
+                            @foreach (var mode in Configuration["GameSettings:AvailableGameModes"].Split(','))
+                            {
+                                <option value="@mode">@mode</option>
+                            }
+                        </select>
+                        <span asp-validation-for="GameMode" class="text-danger small fst-italic"></span>
+                    </div>
+
+                    <div class="mb-3">
+                        <label asp-for="Region" class="form-label"><i class="bi bi-geo-alt-fill text-info me-1"></i> Region <span class="text-muted">(Optional)</span></label>
+                        <select asp-for="Region" class="form-select shadow-sm">
+                            <option value="">-- Select Region (Default) --</option>
+                            @foreach (var region in Configuration["GameSettings:ServerRegions"].Split(','))
+                            {
+                                <option value="@region">@region</option>
+                            }
+                        </select>
+                        <span asp-validation-for="Region" class="text-danger small fst-italic"></span>
+                    </div>
+
+                    <div class="d-grid gap-2 mt-4">
+                        <button type="submit" class="btn btn-primary btn-lg shadow-sm"><i class="bi bi-plus-circle"></i> Create Server</button>
+                        <a asp-action="Index" class="btn btn-secondary shadow-sm"> <i class="bi bi-arrow-left-circle"></i> Back to Server List</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    @{await Html.RenderPartialAsync("_ValidationScriptsPartial");}
+}
