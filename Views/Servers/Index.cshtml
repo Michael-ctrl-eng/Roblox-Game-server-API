@@ -1,0 +1,109 @@
+@model RobloxGameServerWebApp.Models.ServerResponse[]
+
+@{
+    ViewData["Title"] = "Game Servers";
+    var dateFormat = Configuration["GameSettings:WebUI:DateFormat"]; // Get date format from config
+}
+
+<div class="container">
+    <h1 class="display-4 text-primary mb-4">@Configuration["GameSettings:WebUI:PageTitle"] - Game Servers</h1>
+
+    @if (!string.IsNullOrEmpty(ViewBag.ErrorMessage))
+    {
+        <div class="alert alert-danger shadow-sm" role="alert">
+            <i class="bi bi-exclamation-triangle-fill"></i> @ViewBag.ErrorMessage
+        </div>
+    }
+
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <a asp-action="Create" class="btn btn-primary shadow-sm">
+            <i class="bi bi-server"></i> Create New Server
+        </a>
+        <div>
+            <span class="text-muted small me-2">Total Servers: @(Model?.Length ?? 0)</span>
+            <span class="badge bg-info shadow-sm">Online: @(Model?.Count(s => s.Status == "Online") ?? 0)</span>
+            <span class="badge bg-warning shadow-sm">Starting: @(Model?.Count(s => s.Status == "Starting") ?? 0)</span>
+            <span class="badge bg-danger shadow-sm">Offline: @(Model?.Count(s => s.Status == "Offline") ?? 0)</span>
+        </div>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-striped table-hover bg-light shadow-sm rounded">
+            <thead class="table-dark">
+                <tr>
+                    <th scope="col">@Html.DisplayNameFor(model => model[0].ServerID)</th>
+                    <th scope="col">@Html.DisplayNameFor(model => model[0].Name)</th>
+                    <th scope="col">@Html.DisplayNameFor(model => model[0].RobloxPlaceID)</th>
+                    <th scope="col">@Html.DisplayNameFor(model => model[0].GameMode)</th>
+                    <th scope="col">@Html.DisplayNameFor(model => model[0].Region)</th>
+                    <th scope="col">@Html.DisplayNameFor(model => model[0].Status)</th>
+                    <th scope="col">@Html.DisplayNameFor(model => model[0].CurrentPlayers) / @Html.DisplayNameFor(model => model[0].MaxPlayers)</th>
+                    <th scope="col">@Html.DisplayNameFor(model => model[0].LastHeartbeat)</th>
+                    <th scope="col" class="text-center">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (Model != null && Model.Any())
+                {
+                    @foreach (var item in Model)
+                    {
+                        <tr>
+                            <td scope="row" class="fw-bold">@Html.DisplayFor(modelItem => item.ServerID)</td>
+                            <td>@Html.DisplayFor(modelItem => item.Name)</td>
+                            <td><span class="text-muted small">@Html.DisplayFor(modelItem => item.RobloxPlaceID)</span></td>
+                            <td><span class="badge bg-secondary shadow-sm">@Html.DisplayFor(modelItem => item.GameMode)</span></td>
+                            <td><span class="badge bg-primary shadow-sm">@Html.DisplayFor(modelItem => item.Region)</span></td>
+                            <td>
+                                @if (item.Status == "Online")
+                                {
+                                    <span class="badge bg-success shadow-sm"><i class="bi bi-check-circle-fill"></i> @Html.DisplayFor(modelItem => item.Status)</span>
+                                }
+                                else if (item.Status == "Starting")
+                                {
+                                    <span class="badge bg-warning text-dark shadow-sm"><i class="bi bi-hourglass-split"></i> @Html.DisplayFor(modelItem => item.Status)</span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-danger shadow-sm"><i class="bi bi-x-circle-fill"></i> @Html.DisplayFor(modelItem => item.Status)</span>
+                                }
+                            </td>
+                            <td>
+                                <div class="d-flex align-items-center">
+                                    <div class="progress me-2" style="width: 100px; height: 10px;">
+                                        <div class="progress-bar bg-success shadow-sm" role="progressbar" style="width: @(((double)item.CurrentPlayers / item.MaxPlayers) * 100)%;" aria-valuenow="@item.CurrentPlayers" aria-valuemin="0" aria-valuemax="@item.MaxPlayers"></div>
+                                    </div>
+                                    <span class="small">@Html.DisplayFor(modelItem => item.CurrentPlayers) / @Html.DisplayFor(modelItem => item.MaxPlayers)</span>
+                                </div>
+                            </td>
+                            <td class="small text-muted">
+                                @item.LastHeartbeat.ToString(dateFormat)
+                            </td>
+                            <td class="text-center">
+                                <a asp-action="Details" asp-route-id="@item.ServerID" class="btn btn-sm btn-outline-info shadow-sm" title="View Details">
+                                    <i class="bi bi-info-circle"></i>
+                                </a>
+                                @* Add Edit and Delete buttons with similar styling if needed *@
+                            </td>
+                        </tr>
+                    }
+                }
+                else
+                {
+                    <tr>
+                        <td colspan="9" class="text-center py-4">
+                            <i class="bi bi-exclamation-triangle text-warning" style="font-size: 2.5rem;"></i> <br />
+                            <span class="text-muted mt-2 d-block">No game servers available. Click "Create New Server" to add one.</span>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+            <tfoot>
+                <tr>
+                    <td colspan="9" class="text-muted small text-center pt-3">
+                        <i class="bi bi-clock"></i> Last updated: @DateTime.Now.ToString(dateFormat)
+                    </td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+</div>
