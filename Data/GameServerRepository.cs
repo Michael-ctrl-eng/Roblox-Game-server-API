@@ -1,90 +1,119 @@
-// Data/GameServerRepository.cs (Enhanced - Error Handling)
 using Microsoft.EntityFrameworkCore;
 using RobloxGameServerAPI.Models;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using Microsoft.Extensions.Logging; // Import ILogger
+using Microsoft.Extensions.Logging;
 
 namespace RobloxGameServerAPI.Data
-{
-    public class GameServerRepository : IGameServerRepository
+{    public class GameServerRepository : IGameServerRepository
     {
         private readonly GameServerDbContext _context;
-        private readonly ILogger<GameServerRepository> _logger; // Inject Logger
+        private readonly ILogger<GameServerRepository> _logger;
 
-        public GameServerRepository(GameServerDbContext context, ILogger<GameServerRepository> logger) // Inject Logger
+        public GameServerRepository(GameServerDbContext context, ILogger<GameServerRepository> logger)
         {
             _context = context;
             _logger = logger;
         }
 
-        public async Task<GameServer> CreateServerAsync(GameServer server)
+        public async Task<GameServer> GetServerByIdAsync(Guid serverId)
         {
             try
             {
-                _context.GameServers.Add(server);
-                await _context.SaveChangesAsync();
-                _logger.LogDebug("Game server created in database: ServerID={ServerID}, Name={ServerName}", server.ServerID, server.Name); // Repository-level logging
+                _logger.LogDebug("GetServerByIdAsync: Retrieving server with ID {ServerId} from database.", serverId);
+                var server = await _context.GameServers.FindAsync(serverId);
+                if (server != null)
+                {
+                    _logger.LogDebug("GetServerByIdAsync: Server found for ID {ServerId}.", serverId);
+                }
+                else
+                {
+                    _logger.LogDebug("GetServerByIdAsync: Server not found for ID {ServerId}.", serverId);
+                }
                 return server;
-            }
-            catch (DbUpdateException ex) // Catch EF Core database update exceptions
-            {
-                _logger.LogError(ex, "Database update exception in CreateServerAsync for ServerID={ServerID}, Name={ServerName}.", server.ServerID, server.Name);
-                throw new DataAccessException("Error saving game server to the database.", ex); // Re-throw custom DataAccessException
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Unexpected exception in CreateServerAsync for ServerID={ServerID}, Name={ServerName}.", server.ServerID, server.Name);
-                throw new DataAccessException("An unexpected error occurred while saving game server data.", ex); // Re-throw custom DataAccessException
+                _logger.LogError(ex, "GetServerByIdAsync: Exception while retrieving server with ID {ServerId}.", serverId);
+                throw new DataAccessException("Error retrieving game server data from the database.", ex); // Throw custom DataAccessException
             }
+        }
+
+        public async Task<IEnumerable<GameServer>> GetAllServersAsync()
+        {
+            try
+            {
+                _logger.LogDebug("GetAllServersAsync: Retrieving all servers from database.");
+                var servers = await _context.GameServers.ToListAsync();
+                _logger.LogDebug("GetAllServersAsync: Retrieved {ServerCount} servers.", servers.Count);
+                return servers;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "GetAllServersAsync: Exception while retrieving all servers.");
+                throw new DataAccessException("Error retrieving game server data from the database.", ex); // Throw custom DataAccessException
+            }
+        }
+
+        public async Task<GameServer> CreateServerAsync(GameServer server)
+        {
         }
 
         public async Task<GameServer> UpdateServerAsync(GameServer server)
         {
-            try
-            {
-                _context.Entry(server).State = EntityState.Modified;
-                await _context.SaveChangesAsync();
-                _logger.LogDebug("Game server updated in database: ServerID={ServerID}, Name={ServerName}", server.ServerID, server.Name);
-                return server;
-            }
-            catch (DbUpdateException ex)
-            {
-                _logger.LogError(ex, "Database update exception in UpdateServerAsync for ServerID={ServerID}, Name={ServerName}.", server.ServerID, server.Name);
-                throw new DataAccessException("Error updating game server in the database.", ex);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Unexpected exception in UpdateServerAsync for ServerID={ServerID}, Name={ServerName}.", server.ServerID, server.Name);
-                throw new DataAccessException("An unexpected error occurred while updating game server data.", ex);
-            }
         }
 
         public async Task<bool> DeleteServerAsync(Guid serverId)
         {
+        }
+
+        public async Task UpdateServerHeartbeatAsync(Guid serverId)
+        {
             try
             {
                 var server = await GetServerByIdAsync(serverId);
-                if (server == null) return false;
-                _context.GameServers.Remove(server);
-                await _context.SaveChangesAsync();
-                _logger.LogDebug("Game server deleted from database: ServerID={ServerID}", serverId);
-                return true;
+                if (server != null)
+                {
+                    server.HeartbeatTimestamp = DateTime.UtcNow;
+                    server.LastUpdatedTimestamp = DateTime.UtcNow;
+                    await _context.SaveChangesAsync();
+                    _logger.LogDebug("UpdateServerHeartbeatAsync: Heartbeat updated for ServerID={ServerId}.", serverId);
+                }
+                else
+                {
+                    _logger.LogWarning("UpdateServerHeartbeatAsync: Server not found for ID {ServerId}, heartbeat update skipped.", serverId);
+                }
             }
             catch (DbUpdateException ex)
             {
-                _logger.LogError(ex, "Database update exception in DeleteServerAsync for ServerID={ServerID}.", serverId);
-                throw new DataAccessException("Error deleting game server from the database.", ex);
+                _logger.LogError(ex, "UpdateServerHeartbeatAsync: Database update exception for ServerID={ServerId}.", serverId);
+                throw new DataAccessException("Error updating server heartbeat in the database.", ex);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Unexpected exception in DeleteServerAsync for ServerID={ServerID}.", serverId);
-                throw new DataAccessException("An unexpected error occurred while deleting game server data.", ex);
+                _logger.LogError(ex, "UpdateServerHeartbeatAsync: Unexpected exception for ServerID={ServerId}.", serverId);
+                throw new DataAccessException("An unexpected error occurred while updating server heartbeat data.", ex);
             }
         }
 
-        // ... (Other repository methods - GetServerByIdAsync, GetAllServersAsync, UpdateServerHeartbeatAsync, GetServersByStatusAsync - implement similar try-catch blocks and logging)
+        public async Task<IEnumerable<GameServer>> GetServersByStatusAsync(string status)
+        {
+            try
+            {
+                _logger.LogDebug("GetServersByStatusAsync: Retrieving servers with status '{Status}' from database.", status);
+                var servers = await _context.GameServers
+                                             .Where(s => s.Status == status)
+                                             .ToListAsync();
+                _logger.LogDebug("GetServersByStatusAsync: Retrieved {ServerCount} servers with status '{Status}'.", servers.Count, status);
+                return servers;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "GetServersByStatusAsync: Exception while retrieving servers by status '{Status}'.", status, ex);
+                throw new DataAccessException("Error retrieving game server data from the database.", ex);
+            }
+        }
     }
 }
