@@ -1,0 +1,69 @@
+@model RobloxGameServerAPI.Models.ServerResponse
+
+@{
+    ViewData["Title"] = "Server Details";
+    var dateFormat = Configuration["GameSettings:WebUI:DateFormat"]; // Get date format from config
+}
+
+<div class="container">
+    <h1 class="display-4 text-primary mb-4">Server Details</h1>
+
+    <div class="card shadow p-4">
+        <h5 class="card-title text-muted mb-3"><i class="bi bi-server"></i> Server Information</h5>
+        <dl class="row">
+            <dt class="col-sm-3 fw-bold"><i class="bi bi-key-fill text-primary me-1"></i> Server ID</dt>
+            <dd class="col-sm-9">@Html.DisplayFor(model => model.ServerID)</dd>
+
+            <dt class="col-sm-3 fw-bold"><i class="bi bi-tag-fill text-primary me-1"></i> Name</dt>
+            <dd class="col-sm-9">@Html.DisplayFor(model => model.Name)</dd>
+
+            <dt class="col-sm-3 fw-bold"><i class="bi bi-puzzle-fill text-primary me-1"></i> Roblox Place ID</dt>
+            <dd class="col-sm-9">@Html.DisplayFor(model => model.RobloxPlaceID)</dd>
+
+            <dt class="col-sm-3 fw-bold"><i class="bi bi-controller text-info me-1"></i> Game Mode</dt>
+            <dd class="col-sm-9"><span class="badge bg-secondary shadow-sm">@Html.DisplayFor(model => model.GameMode)</span></dd>
+
+            <dt class="col-sm-3 fw-bold"><i class="bi bi-geo-alt-fill text-info me-1"></i> Region</dt>
+            <dd class="col-sm-9"><span class="badge bg-primary shadow-sm">@Html.DisplayFor(model => model.Region)</span></dd>
+
+            <dt class="col-sm-3 fw-bold"><i class="bi bi-activity text-success me-1"></i> Status</dt>
+            <dd class="col-sm-9">
+                @if (Model.Status == "Online")
+                {
+                    <span class="badge bg-success shadow-sm"><i class="bi bi-check-circle-fill"></i> @Html.DisplayFor(model => model.Status)</span>
+                }
+                else if (Model.Status == "Starting")
+                {
+                    <span class="badge bg-warning text-dark shadow-sm"><i class="bi bi-hourglass-split"></i> @Html.DisplayFor(model => model.Status)</span>
+                }
+                else
+                {
+                    <span class="badge bg-danger shadow-sm"><i class="bi bi-x-circle-fill"></i> @Html.DisplayFor(model => model.Status)</span>
+                }
+            </dd>
+
+            <dt class="col-sm-3 fw-bold"><i class="bi bi-people-fill text-success me-1"></i> Players</dt>
+            <dd class="col-sm-9">
+                <div class="d-flex align-items-center">
+                    <div class="progress me-2" style="width: 200px; height: 12px;">
+                        <div class="progress-bar bg-success shadow-sm" role="progressbar" style="width: @(((double)Model.CurrentPlayers / Model.MaxPlayers) * 100)%;" aria-valuenow="@Model.CurrentPlayers" aria-valuemin="0" aria-valuemax="@Model.MaxPlayers"></div>
+                    </div>
+                    <span class="fw-bold">@Html.DisplayFor(model => model.CurrentPlayers)</span> / @Html.DisplayFor(model => model.MaxPlayers)
+                </div>
+            </dd>
+
+            <dt class="col-sm-3 fw-bold"><i class="bi bi-person-bounding-box text-secondary me-1"></i> Max Players</dt>
+            <dd class="col-sm-9">@Html.DisplayFor(model => model.MaxPlayers)</dd>
+
+            <dt class="col-sm-3 fw-bold"><i class="bi bi-clock-fill text-muted me-1"></i> Last Heartbeat</dt>
+            <dd class="col-sm-9 text-muted small">@Model.LastHeartbeat.ToString(dateFormat)</dd>
+        </dl>
+    </div>
+
+    <div class="mt-4 d-flex justify-content-end">
+        <a asp-action="Index" class="btn btn-secondary shadow-sm">
+            <i class="bi bi-arrow-left-circle"></i> Back to Server List
+        </a>
+        @* Add Edit and Delete buttons with similar styling if needed *@
+    </div>
+</div>
