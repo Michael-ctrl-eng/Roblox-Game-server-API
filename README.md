@@ -1,52 +1,55 @@
-# Roblox Game Server API - Effortless Integration, Limitless Control
+Roblox Game Server API
+A Python Library for Creating Custom Game Servers on Roblox
 
-**Effortless Integration Starts Here: Unlock the full potential of your Roblox game servers with documentation so clear, it practically writes your integration code for you.**
+Table of Contents
 
-Tired of wrestling with complex server management?  Want to spend less time on infrastructure and more time crafting amazing game experiences?  The Roblox Game Server API is designed to empower you, the Roblox game developer, with a robust and intuitive way to manage your game servers directly.
+Introduction
+Getting Started
+API Documentation
+Examples
+Contributing
+License
+Introduction
 
-Dive into crystal-clear guides, comprehensive API references, and practical examples that make setup and usage a breeze, even if you're new to server APIs. Stop struggling with confusing documentation and start building amazing server control today!
+The Roblox Game Server API is a Python library that allows developers to create custom game servers for the Roblox platform. With this library, you can unlock the full potential of Roblox and create games that are more engaging, more interactive, and more immersive than ever before.
 
-##  Why Choose the Roblox Game Server API?
+Getting Started
 
-We believe in making powerful tools accessible. This API is built with **developer experience** at its core, focusing on:
+To get started with the Roblox Game Server API, follow these steps:
 
-*   **Ease of Use:**  Forget cryptic commands and convoluted configurations. Our RESTful API is straightforward and predictable, making integration smooth and efficient.
-*   **Crystal-Clear Documentation:**  We've poured our energy into creating documentation that's not just comprehensive, but also incredibly easy to understand.  You'll find:
-    *   **Step-by-step Getting Started Guides:** Walk through the initial setup process painlessly.
-    *   **Detailed API Reference:** Every endpoint, request, and response is meticulously documented with clear explanations and examples.
-    *   **Practical Code Examples:**  See the API in action with readily usable code snippets in popular programming languages (e.g., C#, JavaScript, Python - *mention languages your examples cover*).
-*   **Real-World Efficiency:**  This isn't a basic example – it's built for real Roblox game deployments.  Benefit from:
-    *   **Scalable Server Management:** Easily create, update, and delete game servers to match player demand.
-    *   **Real-time Server Status Updates:**  Keep your players informed with live server information, improving their game experience.
-    *   **Advanced Features:**  Manage server configurations, player sessions, and even integrate server health monitoring for optimal performance.
+Install the Library: Install the library using pip: pip install roblox-game-server-api
+Get an API Key: Obtain an API key from the Roblox developer dashboard
+Create a Game Server: Create a new game server using the GameServer class
+Start the Game Server: Start the game server using the start method
+API Documentation
 
-## Key Features at a Glance
+The Roblox Game Server API provides a range of methods for creating and managing game servers. Here are some of the key methods:
 
-*   **Server Lifecycle Management:** Create, update, and delete game servers programmatically.
-*   **Real-time Server Status:** Retrieve up-to-the-second server status, player counts, and operational states.
-*   **Granular Server Configuration:**  Dynamically adjust server settings like game modes, maps, and resource limits.
-*   **Player Session Tracking:**  Monitor and manage player activity on your servers.
-*   **Robust Security:**  Built with industry-standard OAuth 2.0 authentication and API Key options to protect your server infrastructure.
-*   **Comprehensive Documentation:** Your integration roadmap, meticulously crafted for clarity and ease of use.
+GameServer: Creates a new game server
+start: Starts the game server
+stop: Stops the game server
+get_player_count: Returns the number of players currently playing on the game server
+get_game_state: Returns the current state of the game server
+Examples
 
-## Getting Started - It's Simpler Than You Think!
+Here are some examples of how to use the Roblox Game Server API:
 
-Ready to take control of your Roblox game servers? Here's how to begin:
+Create a new game server: game_server = GameServer(api_key, game_id)
+Start the game server: game_server.start()
+Get the player count: player_count = game_server.get_player_count()
+Get the game state: game_state = game_server.get_game_state()
+Contributing
 
-1.  **Explore the Documentation:**  Your first stop for everything API related! Find detailed guides, API references
-2.  **Generate Your API Key:** Securely access the API by generating your unique API Key within your Roblox Creator  Instructions are in the documentation!
-3.  **Dive into the Code Examples:**  Start experimenting immediately with our ready-to-use code examples. 
-4.  **Start Building!**  Integrate the Roblox Game Server API into your server management tools, game clients, or any application that needs to interact with your Roblox game servers.
+We welcome contributions to the Roblox Game Server API! If you'd like to contribute, please fork the repository and submit a pull request.
 
-## Benefits for Your Game Development
+License
 
-By integrating the Roblox Game Server API, you'll unlock significant advantages:
+The Roblox Game Server API is licensed under the MIT license 
 
-*   **Streamlined Game Development:**  Focus on game design and player experience, not server management complexities.
-*   **Enhanced Player Experience:** Provide players with real-time server information, leading to better server selection and engagement.
-*   **Scalable Server Infrastructure:**  Dynamically adjust server capacity to meet player demand, ensuring smooth gameplay even during peak hours.
-*   **Potential for Increased Revenue:**  Offer premium server options, advanced server management tools, or in-game server controls through your integration.
+Acknowledgments
 
-## Dive In and Take Control!
+The Roblox Game Server API is built on top of the Roblox API, which is provided by Roblox Corporation. We would like to thank Roblox Corporation for their support and guidance in developing this library.
 
-Don't let server management hold back your Roblox game's potential.  Explore the Roblox Game Server API documentation today and experience the power of effortless integration.
+Contact
+
+If you have any questions or need help with the Roblox Game Server API, please don't hesitate to contact us. You can reach us at michael.makram.zm@gmail.com.
