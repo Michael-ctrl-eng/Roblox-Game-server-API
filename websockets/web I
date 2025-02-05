@@ -1,0 +1,112 @@
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using System;
+using System.Collections.Concurrent;
+using System.Net.WebSockets;
+using System.Text;
+using System.Text.Json;
+using System.Threading;
+using System.Threading.Channels;
+using System.Threading.Tasks;
+using RobloxGameServerAPI.Services;
+
+namespace RobloxGameServerAPI.WebSockets
+{
+    public class ServerStatusWebSocketHandler : WebSocketHandler
+    {
+        private readonly IGameServerService _serverService;
+        private static readonly ConcurrentDictionary<Guid, List<WebSocket>> _serverSubscriptions = new ConcurrentDictionary<Guid, List<WebSocket>>();
+        private static readonly ConcurrentDictionary<Guid, Channel<ServerResponse>> _serverStatusChannels = new ConcurrentDictionary<Guid, Channel<ServerResponse>>(); // Channels for throttling
+
+        public ServerStatusWebSocketHandler(IGameServerService serverService)
+        {
+            _serverService = serverService;
+        }
+
+        public override async Task OnConnected(WebSocket socket)
+        {
+            var message = await ReceiveStringAsync(socket);
+            if (Guid.TryParse(message, out Guid serverId))
+            {
+                if (!_serverSubscriptions.ContainsKey(serverId))
+                {
+                    _serverSubscriptions[serverId] = new List<WebSocket>();
+                    StartStatusBroadcastingChannel(serverId); // Start channel-based broadcasting for new server subscription
+                }
+                _serverSubscriptions[serverId].Add(socket);
+                Console.WriteLine($"WebSocket client subscribed to server {serverId}");
+                await SendMessageAsync(socket, $"Subscribed to server {serverId} status updates.");
+                await SendInitialStatus(socket, serverId);
+            }
+            else
+            {
+                await SendMessageAsync(socket, "Invalid ServerID. Closing connection.");
+                await socket.CloseAsync(WebSocketCloseStatus.InvalidPayloadData, "Invalid ServerID", CancellationToken.None);
+            }
+        }
+
+        private async Task SendInitialStatus(WebSocket socket, Guid serverId)
+        {
+            var serverResponse = await _serverService.GetServerAsync(serverId);
+            if (serverResponse != null)
+            {
+                await SendServerStatusUpdate(serverResponse, new List<WebSocket> { socket });
+            }
+        }
+
+        public override async Task OnDisconnected(WebSocket socket)
+        {
+            foreach (var serverId in _serverSubscriptions.Keys)
+            {
+                _serverSubscriptions[serverId].RemoveAll(s => s == socket); // Remove disconnected socket from subscriptions
+            }
+            Console.WriteLine("WebSocket client disconnected.");
+        }
+
+        public async Task SendServerStatusUpdate(ServerResponse serverStatus, List<WebSocket> socketsToUpdate)
+        {
+            var jsonStatus = JsonSerializer.Serialize(serverStatus);
+            var buffer = Encoding.UTF8.GetBytes(jsonStatus);
+            foreach (var socket in socketsToUpdate)
+            {
+                if (socket.State == WebSocketState.Open)
+                {
+                    await SendAsync(socket, new ArraySegment<byte>(buffer, 0, buffer.Length), WebSocketMessageType.Text, true, CancellationToken.None);
+                }
+            }
+        }
+
+        private void StartStatusBroadcastingChannel(Guid serverId)
+        {
+            if (_serverStatusChannels.ContainsKey(serverId)) return; // Channel already started for this server
+
+            var channel = Channel.CreateUnbounded<ServerResponse>(); // Create an unbounded channel (consider bounded for backpressure in high-load scenarios)
+            _serverStatusChannels[serverId] = channel;
+
+            Task.Run(async () => { // Background task to read status updates from the channel and broadcast to WebSockets
+                while (await channel.Reader.WaitToReadAsync())
+                {
+                    if (channel.Reader.TryRead(out var serverStatus))
+                    {
+                        if (_serverSubscriptions.TryGetValue(serverId, out var subscribers))
+                        {
+                            await SendServerStatusUpdate(serverStatus, subscribers); // Send status update to subscribed WebSocket clients
+                        }
+                    }
+                }
+            });
+
+            Task.Run(async () => { // Background task to periodically fetch server status and write to the channel (throttling mechanism)
+                while (true)
+                {
+                    var serverResponse = await _serverService.GetServerAsync(serverId); // Fetch latest server status
+                    if (serverResponse != null)
+                    {
+                        await channel.Writer.WriteAsync(serverResponse); // Write status to the channel - this is throttled by the delay below
+                    }
+                    await Task.Delay(TimeSpan.FromSeconds(2)); // Throttling: Fetch and send status updates every 2 seconds (configurable)
+                }
+            });
+        }
+    }
+}
